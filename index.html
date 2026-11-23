@@ -108,6 +108,10 @@ textarea{height:80px;font-size:11px;resize:none}
 #bAuto{width:66px;height:66px;font-size:13px}
 #bTeam{width:58px;height:58px;font-size:11px;background:radial-gradient(circle at 35% 30%,#999,#444)}#bTeam.on{background:radial-gradient(circle at 35% 30%,#ffb86b,#d0661a)}
 #dialTag{font-size:11px;color:#c9f}
+#stats{pointer-events:auto}
+#spd,#dst{word-break:break-word}
+.uBtn{pointer-events:auto;font-size:13px;line-height:1;padding:3px 7px;border-radius:7px;background:rgba(120,160,255,.35);color:#fff;border:1px solid rgba(255,255,255,.35);vertical-align:1px}
+.uBtn:active{background:rgba(120,160,255,.7)}
 #stats.dim{opacity:.35}
 .toast{position:absolute;left:50%;top:22%;transform:translateX(-50%);background:rgba(20,20,60,.9);border:2px solid #ffd84d;border-radius:12px;padding:8px 14px;font-weight:800;font-size:14px;animation:slideIn .3s;white-space:nowrap}
 .grp{font-weight:900;color:#ffd84d;margin:12px 0 4px;font-size:15px}
@@ -129,9 +133,10 @@ input[type=range]{padding:0;border:none;background:none}
   <div id="stats">
     <div id="lvRow"><div id="lv">Lv 1</div><div id="dialTag"></div></div>
     <div id="xpBar"><div id="xpFill"></div></div>
-    <div class="st">Speed <span id="spd">0</span></div>
+    <div class="st">Speed <button class="uBtn" id="uSpd" title="Change units">⇄</button> <span id="spd">0</span></div>
+    <div id="topSpd" style="font-size:12px;color:#9cf"></div>
     <div id="cmp"></div>
-    <div class="st">Distance <b id="dst">0 m</b></div>
+    <div class="st">Distance <button class="uBtn" id="uDst" title="Change units">⇄</button> <b id="dst">0 m</b></div>
     <div id="zone"></div>
     <div id="next"></div>
     <div id="bonus"></div>
@@ -150,7 +155,7 @@ input[type=range]{padding:0;border:none;background:none}
 <!-- Title -->
 <div id="title" class="screen">
   <div class="panel">
-    <div id="logo">VOVA:<br>RUN RUN RUN<small>v1.2</small></div>
+    <div id="logo">VOVA:<br>RUN RUN RUN<small>v1.4.1</small></div>
     <img id="titleImg" src="img/vova.png" alt="Vova">
     <div id="saveInfo"></div>
     <input id="nameIn" maxlength="16" placeholder="Your name">
@@ -266,7 +271,8 @@ input[type=range]{padding:0;border:none;background:none}
   <p>🏃 <b>Move</b> with ← → ↑ ↓ / WASD, or drag anywhere on the screen like a joystick. Moving in <b>any</b> direction earns XP.</p>
   <p>⬆ <b>Level up</b> and you run faster. How far can you go? Nobody knows… yet.</p>
   <p>⭐ Grab the glowing star dust for bonus XP.</p>
-  <p>🤖 <b>AUTO</b> (Q) keeps running for you.</p>
+  <p>🤖 <b>AUTO</b> (Q) keeps running for you. You start at a running pace and speed up the longer you keep going.</p>
+  <p>⇄ Tap the ⇄ buttons next to Speed and Distance to switch units (km/h, mph, light speed, AU, light-years…) and see the full giant numbers.</p>
   <p>❓ Every place, speed and phase is a secret until you reach it.</p>
   <p>🏆 <b>Challenges</b> (Menu): race animals, machines and light, escape planets, stars and black holes. Dodge with ↑↓.</p>
   <p>← Running back takes you back: earlier places, earlier phases.</p>

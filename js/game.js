@@ -8,7 +8,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const PCOL = ["#4dd2ff", "#7dff6b", "#ffd84d", "#ff8bd8", "#b38cff", "#ff9f43", "#5effd8", "#ff6b6b"];
 
 /* ---------------- Save (same key as v1.0 — old saves keep working) ---------------- */
-const DEFAULT = () => ({ver:3, pid:"", name:"", level:1, xp:0, dist:0, pos:0, maxPos:0, odo:0, team:true, runTime:0, seen:[], phase:0, mv:false, uni:0, mvp:0, uniName:"", uniHue:270,
+const DEFAULT = () => ({ver:3, uS:0, uD:0, pid:"", name:"", level:1, xp:0, dist:0, pos:0, maxPos:0, odo:0, team:true, runTime:0, seen:[], phase:0, mv:false, uni:0, mvp:0, uniName:"", uniHue:270,
   auto:false, sound:true, ch:[], sup:false, free:{spd:null, place:null}, created:Date.now()});
 let S = DEFAULT();
 function validSave(o) { return o && typeof o === "object" && isFinite(o.level) && o.level >= 1 && isFinite(o.dist) && o.dist >= 0 && Array.isArray(o.seen); }
@@ -58,13 +58,19 @@ let dust = [], dustTimer = 3, particles = [], flash = 0, hintTimer = 0;
 let chal = null;
 const vovaImg = new Image(); vovaImg.src = "img/vova.png";
 
-let curV = V0, pxm = 1, paceMode = "", paceName = ""; // current speed this frame (after team pace / homing) and pixels per metre
+let curV = V0, pxm = 1, myVel = 0, rampT = 0, rampDir = 0, homeGap = 0, paceMode = "", paceName = ""; // current speed this frame (after team pace / homing) and pixels per metre
 function effSpeed() { return speedOf(S.free.spd ? Math.min(S.free.spd, S.level) : S.level); }
 function viewMV() { return S.pos >= EDGE; }
 function viewLg() { return lgOf(Math.min(S.pos, EDGE)); }
 // Realistic on Earth: Vova is ~1.2 m tall, so 1 m = heroHeight/1.2 px. Faster than ~9 m/s the screen can't keep up → log scale.
 function pxpsOf(v) { const ppm = clamp(H * 0.19, 70, 160) / 1.2, v1 = 1000 / ppm; return v <= v1 ? v * ppm : Math.min(1800, 1000 + 130 * Math.log10(v / v1)); }
 function pxps() { return pxpsOf(curV); }
+function nearMate(m) { return Math.abs(m.dp - S.pos) < winM(Math.min(curV, m.v)); } // right next to you, in real metres
+function displayScale() {
+  let v = curV;
+  if (room) for (const m of ghostList()) if (nearMate(m)) v = Math.min(v, m.v);
+  return pxpsOf(v) / v;
+}
 function winM(v) { return W * 0.45 * v / pxpsOf(v); } // metres visible on half a screen at speed v
 function uniIdx(p) { return Math.max(0, Math.floor((p - EDGE) / UNI_D)); }
 function uniName(i) { return "Universe #" + num(i + 1) + ": " + UNI_A[Math.floor(hsh(i, 502) * UNI_A.length)] + " " + UNI_B[Math.floor(hsh(i, 503) * UNI_B.length)]; }
@@ -161,7 +167,7 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => { if (KEYMAP[e.key]) keys.delete(KEYMAP[e.key]); });
 const releaseAll = () => { keys.clear(); stick.on = false; save(); };
 addEventListener("blur", releaseAll);
-document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAll(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAll(); else if (room) pushRoom(); });
 addEventListener("beforeunload", save);
 cv.addEventListener("pointerdown", e => { if (!playing || paused || stick.on) return; stick.on = true; stick.id = e.pointerId; stick.ox = e.clientX; stick.oy = e.clientY; stick.dx = stick.dy = 0; });
 addEventListener("pointermove", e => {
@@ -175,6 +181,12 @@ addEventListener("pointerup", stickUp); addEventListener("pointercancel", stickU
 function toggleAuto() { S.auto = !S.auto; save(); }
 $("bAuto").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); toggleAuto(); });
 $("bTeam").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); S.team = !S.team; save(); toast(S.team ? "🤝 Team pace ON — you'll match slower friends nearby" : "🏃 Team pace OFF — run at your own speed"); });
+function cycleUnit(key, list, label) {
+  S[key] = ((S[key] || 0) + 1) % list.length; save(); hudT = 0;
+  toast(label + ": " + (S[key] === 0 ? "auto" : list[S[key]].n));
+}
+$("uSpd").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); cycleUnit("uS", SPEED_UNITS, "Speed shown in"); });
+$("uDst").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); cycleUnit("uD", DIST_UNITS, "Distance shown in"); });
 $("bMenu").onclick = () => { if (chal) quitChallenge(); else togglePause(); };
 document.querySelectorAll("#emoteBar button").forEach(b => b.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); sendEmote(b.dataset.e); }));
 
@@ -185,14 +197,14 @@ function paceSpeed(dir) {
   let v = effSpeed(); paceMode = "";
   if (!room) return v;
   const mates = ghostList();
-  if (S.team) for (const m of mates) if (Math.abs(m.dp - S.pos) < winM(m.v) && m.v < v) { v = m.v; paceMode = "team"; }
+  if (S.team) for (const m of mates) if (nearMate(m) && m.v < v) { v = m.v; paceMode = "team"; }
   if (dir) {
     let best = null;
-    for (const m of mates) { const gap = (m.dp - S.pos) * dir; if (gap > winM(m.v) && (!best || gap < best.gap)) best = {m, gap}; }
+    for (const m of mates) { const gap = (m.dp - S.pos) * dir; if (gap > 0 && !nearMate(m) && (!best || gap < best.gap)) best = {m, gap}; }
     if (best) {
       const canBoost = dir < 0 || best.m.dp <= S.maxPos;
-      const vh = canBoost ? Math.max(v, 1.5 * best.gap) : v;
-      v = Math.min(vh, 1.5 * best.gap + best.m.v); paceMode = "home"; paceName = best.m.p.name;
+      const vh = canBoost ? Math.max(v, 2.5 * best.gap) : v;
+      v = Math.min(vh, 2.5 * best.gap + best.m.v); paceMode = "home"; paceName = best.m.p.name; homeGap = best.gap;
     }
   }
   return Math.max(v, 1e-6);
@@ -202,14 +214,20 @@ function update(dt) {
   heroMoving = mag > 0.1;
   if (Math.abs(inp.x) > 0.1) heroFace = Math.sign(inp.x);
   const stunned = chal && chal.stun > 0, hx = stunned ? 0 : inp.x;
-  updateGhosts(dt);
-  curV = paceSpeed(Math.abs(hx) > 0.1 ? Math.sign(hx) : 0); pxm = pxpsOf(curV) / curV;
+  const dirH = Math.abs(hx) > 0.1 ? Math.sign(hx) : 0, target = paceSpeed(dirH), START_V = 3;
+  if (!dirH || dirH !== rampDir) { rampDir = dirH; rampT = 0; curV = Math.min(target, START_V); }
+  if (dirH) {
+    // speeds up gently at first (you see the map), then faster: +0.6 → +3 orders of magnitude per second
+    rampT += dt; const grown = curV * Math.pow(10, Math.min(3, 0.6 + 0.5 * rampT) * dt);
+    if (grown >= target) { curV = target; rampT = 0; } else curV = grown;
+  }
+  curV = Math.max(curV, 1e-6); pxm = displayScale();
   hero.wx += hx * pxps() * dt;
   hero.wy = clamp(hero.wy + inp.y * 1.15 * dt, 0, 1);
   if (heroMoving) {
     hintTimer = 0;
     gainXP(XPS * mag * (1 + roomMult()) * dt);
-    const dp = hx * curV * dt;
+    const dp = hx * curV * dt; myVel = hx * curV;
     S.pos = Math.max(0, S.pos + dp); S.odo += Math.abs(dp);
     if (S.pos > S.maxPos) {
       const prev = S.maxPos; S.maxPos = S.pos; S.dist = S.maxPos;
@@ -220,7 +238,7 @@ function update(dt) {
     }
     S.runTime += dt;
     animT += dt * (7 + Math.min(9, S.level / 10));
-  } else { hintTimer += dt; animT += dt * 1.5; }
+  } else { hintTimer += dt; animT += dt * 1.5; myVel = 0; }
   camX += (hero.wx + heroFace * W * 0.1 - camX) * Math.min(1, dt * 2.5);
   // stardust: fixed in the world, grab it by moving up/down
   dustTimer -= dt;
@@ -405,7 +423,7 @@ function draw(t) {
   const ents = [], list = room ? ghostList() : [], now_ = now();
   list.forEach(gh => { const p = gh.p, i = gh.i, g = ghostScreen(gh); ents.push({y: g.y, f: () => {
     const h = clamp(H * 0.19, 70, 160) * (0.88 + 0.18 * gh.dy);
-    if (g.x > -80 && g.x < W + 80) { drawVova(g.x, g.y, h, p.f || 1, 0.85, !!p.run, i * 1.7, false); nameTag(g.x, g.y - h - 4, (p.sup ? "💖 " : "") + p.name + " · Lv" + p.level, p.sup ? "#ffd84d" : PCOL[i % 8], p.emote && now_ - (p.et || 0) < 3500 ? p.emote : null); }
+    if (nearMate(gh) && g.x > -80 && g.x < W + 80) { drawVova(g.x, g.y, h, p.f || 1, 0.85, !!p.run, i * 1.7, false); nameTag(g.x, g.y - h - 4, (p.sup ? "💖 " : "") + p.name + " · Lv" + p.level, p.sup ? "#ffd84d" : PCOL[i % 8], p.emote && now_ - (p.et || 0) < 3500 ? p.emote : null); }
   }}); });
   ents.push({y: heroSY(), f: () => {
     drawVova(heroSX(), heroSY(), heroH(), heroFace, 1, heroMoving, 0, heroMoving && curV > 60);
@@ -416,8 +434,8 @@ function draw(t) {
   ctx.globalAlpha = 1;
   // arrows to off-screen friends
   list.forEach(gh => {
-    const p = gh.p, i = gh.i, g = ghostScreen(gh); if (g.x >= 0 && g.x <= W) return;
-    const left = g.x < 0, ax = left ? 14 : W - 14, ay = bandTop() - 30 - i * 22;
+    const p = gh.p, i = gh.i, g = ghostScreen(gh); if (nearMate(gh) && g.x >= 0 && g.x <= W) return;
+    const left = gh.dp < S.pos, ax = left ? 14 : W - 14, ay = bandTop() - 30 - i * 22;
     ctx.font = "bold 13px sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = left ? "left" : "right";
     const ph = phaseOf(lgOf(Math.min(gh.dp, EDGE)), gh.dp >= EDGE), where = ph <= S.phase ? PHASES[ph].ic + " " + fmtDist(Math.abs(gh.dp - S.pos)) : "❓";
     const txt = left ? "◀ " + p.name + " · " + where : p.name + " · " + where + " ▶";
@@ -450,9 +468,12 @@ function updateHUD(dt) {
   $("lv").textContent = "Lv " + num(S.level);
   $("xpFill").style.width = (S.xp / needXP(S.level) * 100) + "%";
   const tags = []; if (S.free.spd && S.free.spd < S.level) tags.push("🎚 Lv " + S.free.spd + " pace");
-  if (paceMode === "team") tags.push("🤝 team pace"); else if (paceMode === "home" && heroMoving) tags.push("➜ heading to " + paceName);
+  if (paceMode === "team") tags.push("🤝 team pace");
   $("dialTag").textContent = tags.join(" · ");
-  $("spd").textContent = fmtSpeed(v);
+  const running = heroMoving && rampDir;
+  $("spd").textContent = running && paceMode === "home" ? "↩ to " + paceName + ": " + fmtDistU(homeGap, S.uD) + " left"
+    : running ? fmtSpeedU(v, S.uS) : "standing";
+  $("topSpd").textContent = "Top speed: " + fmtSpeedU(effSpeed(), S.uS) + (running && paceMode === "team" ? " · walking with your friend" : "");
   if (viewMV()) {
     const u = uniIdx(S.pos);
     $("cmp").textContent = "≈ " + (v / UNI_D * 60 >= 0.01 ? num(v / UNI_D * 60, 2) : sci(v / UNI_D * 60)) + " universes per minute";
@@ -460,11 +481,11 @@ function updateHUD(dt) {
     $("zone").textContent = "📍 " + uniName(u);
     $("next").textContent = S.pos >= S.maxPos - 1 ? "Next universe: " + Math.floor(((S.pos - EDGE) / UNI_D - u) * 100) + "%" : "";
   } else {
-    $("cmp").textContent = compareLine(v, S.seen);
-    $("dst").textContent = fmtDist(S.pos) + " from home";
+    $("cmp").textContent = paceMode === "home" ? "" : compareLine(effSpeed(), S.seen);
+    $("dst").textContent = fmtDistU(S.pos, S.uD) + " from home";
     $("zone").textContent = "📍 " + placeName(lg, false);
     const nl = LANDMARKS.find(l => l.d > S.maxPos);
-    $("next").textContent = nl ? "Next discovery: ❓ " + fmtDist(nl.d - S.pos) + " away" : "";
+    $("next").textContent = nl ? "Next discovery: ❓ " + fmtDistU(nl.d - S.pos, S.uD) + " away" : "";
   }
   const rm = roomMult();
   $("bonus").textContent = rm > 0 ? "👥 Room bonus +" + Math.round(rm * 100) + "% XP" : "";
@@ -580,7 +601,7 @@ function openDial(from) {
   PHASES.forEach((P, i) => {
     if (i > S.phase) { pl.appendChild(el("button", "btn sm gray", "❓ ???")); return; }
     const b = el("button", "btn sm" + (i === here ? " green" : " gray"), P.ic + " " + P.n);
-    b.onclick = () => { S.pos = i === 0 ? 0 : i === 7 ? S.maxPos >= EDGE ? Math.max(EDGE, S.pos >= EDGE ? S.pos : EDGE * 1.0001) : EDGE : Math.min(S.maxPos, Math.pow(10, PHASES[i].lg) * 1.001); save(); openDial(from); };
+    b.onclick = () => { S.pos = i === 0 ? 0 : i === 7 ? S.maxPos >= EDGE ? Math.max(EDGE, S.pos >= EDGE ? S.pos : EDGE * 1.0001) : EDGE : Math.min(S.maxPos, Math.pow(10, PHASES[i].lg) * 1.001); save(); pushRoom(); openDial(from); };
     pl.appendChild(b);
   });
   openPanel("dial", from);
@@ -615,7 +636,10 @@ function frame(t) {
   else if (!playing) { animT += dt * 6; curV = 1.4; pxm = pxpsOf(curV) / curV; camX += pxps() * dt; hero.wx = camX - W * 0.1; heroMoving = true; }
   try { draw(t); } catch (e) { console.error(e); }
   if (playing) updateHUD(dt);
-  if (room) { pushTimer -= dt; if (pushTimer <= 0) { pushTimer = heroMoving ? 0.2 : 1.5; pushRoom(); } }
+  if (room) {
+    updateGhosts(); if (!playing || paused) pxm = displayScale();
+    pushTimer -= dt; if (pushTimer <= 0 || needPushNow()) { pushTimer = heroMoving ? 0.2 : 1.5; pushRoom(); }
+  }
   requestAnimationFrame(frame);
 }
 resize(); buildTicks(); titleInfo();

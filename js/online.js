@@ -34,26 +34,37 @@ async function watchSupporter() {
   supRef.on("value", s => { const was = S.sup; S.sup = s.exists(); if (S.sup && !was) { bannerShow("💖 THANK YOU! 💖", "Supporter badge unlocked", 3); save(); } if (typeof renderSupport === "function") renderSupport(); }, () => {});
 }
 function othersList() { const t = now(); return Object.entries(others).filter(([k, p]) => k !== S.pid && p && t - (p.ts || 0) < 20000 && isFinite(p.pos)).map(([k, p]) => p).slice(0, 7); }
-// smooth teammates: predict from their last position + velocity, then ease toward it every frame
-const ghosts = {};
-function updateGhosts(dt) {
+// Teammates are replayed from the positions they actually sent (no guessing ahead),
+// ~0.25 s in the past, interpolating between their last two packets → smooth AND exact.
+const ghosts = {}, INTERP_DELAY = 250;
+function updateGhosts() {
   const t = now(), seen = new Set();
   Object.entries(others).forEach(([k, p]) => {
     if (k === S.pid || !p || t - (p.ts || 0) > 20000 || !isFinite(p.pos)) return;
     seen.add(k);
-    const age = clamp((t - (p.ts || t)) / 1000, 0, 0.6), target = Math.max(0, p.pos + (p.vel || 0) * age);
     let g = ghosts[k];
-    if (!g) g = ghosts[k] = {dp: target, dy: p.y ?? 0.5};
-    const k2 = Math.min(1, dt * 9);
-    g.dp += (target - g.dp) * k2; g.dy += ((p.y ?? 0.5) - g.dy) * k2;
-    g.p = p; g.v = p.v || speedOf(p.level || 1);
+    if (!g) g = ghosts[k] = {buf: []};
+    const last = g.buf[g.buf.length - 1];
+    if (!last || p.ts !== last.t || p.pos !== last.pos) {
+      if (last && p.ts <= last.t) g.buf.length = 0;        // clock jump / rejoin: start fresh
+      g.buf.push({t: p.ts || t, pos: p.pos, y: p.y ?? 0.5});
+      if (g.buf.length > 40) g.buf.splice(0, g.buf.length - 40);
+    }
+    const rt = t - INTERP_DELAY, buf = g.buf;
+    let pos = buf[buf.length - 1].pos, y = buf[buf.length - 1].y;
+    if (rt <= buf[0].t) { pos = buf[0].pos; y = buf[0].y; }
+    else for (let i = buf.length - 1; i > 0; i--) {
+      const A = buf[i - 1], B = buf[i];
+      if (rt >= A.t && rt <= B.t) { const f = B.t > A.t ? (rt - A.t) / (B.t - A.t) : 1; pos = A.pos + (B.pos - A.pos) * f; y = A.y + (B.y - A.y) * f; break; }
+    }
+    g.dp = Math.max(0, pos); g.dy = y; g.p = p; g.v = p.v || speedOf(p.level || 1);
   });
   for (const k in ghosts) if (!seen.has(k)) delete ghosts[k];
   let i = 0; for (const k in ghosts) ghosts[k].i = i++;
 }
 function ghostList() { return Object.values(ghosts).filter(g => g.p).slice(0, 7); }
 function myPacket() {
-  return {name: S.name || "Vova", level: S.level, pos: S.pos, vel: heroMoving ? Math.sign(heroFace) * (Math.abs(readInput().x) > 0.1 ? curV : 0) : 0, v: effSpeed(),
+  return {name: S.name || "Vova", level: S.level, pos: S.pos, vel: myVel, v: effSpeed(),
     lg: Math.round(lgOf(Math.min(S.pos, EDGE)) * 1000) / 1000, run: heroMoving, mv: S.pos >= EDGE, uni: S.uni || 0,
     y: Math.round(hero.wy * 1000) / 1000, f: heroFace, sup: !!S.sup, ch: (S.ch || []).length,
     emote: myEmote || "", et: myEmoteT || 0, ts: firebase.database.ServerValue.TIMESTAMP};
@@ -130,14 +141,21 @@ function renderRoom() {
     const pos = p.pos || 0, ph = phaseOf(lgOf(Math.min(pos, EDGE)), pos >= EDGE), known = ph <= S.phase;
     const where = "Lv " + p.level + " · " + (known ? PHASES[ph].ic + " " + PHASES[ph].n : "❓ somewhere you haven't been");
     r.appendChild(el("div", "z", where + (p.run ? " 🏃" : " 💤")));
-    if (!me && pos <= S.maxPos) { const go = el("button", "btn sm green", "➜ Go"); go.style.cssText = "width:auto;margin:0;padding:4px 10px"; go.onclick = () => { S.pos = pos; save(); bannerShow("➜ " + p.name, "Warped to your friend!", 2); closePanel("rooms"); }; r.appendChild(go); }
+    if (!me && pos <= S.maxPos) { const go = el("button", "btn sm green", "➜ Go"); go.style.cssText = "width:auto;margin:0;padding:4px 10px"; go.onclick = () => { S.pos = pos; save(); pushRoom(); bannerShow("➜ " + p.name, "Warped to your friend!", 2); closePanel("rooms"); }; r.appendChild(go); }
     box.appendChild(r);
   };
   addRow({name: S.name, level: S.level, pos: S.pos, run: heroMoving, sup: S.sup}, "#ff4d6d", true);
   othersList().forEach((p, i) => addRow(p, PCOL[i % 8], false));
 }
 function sendEmote(e) { myEmote = e; myEmoteT = now(); pushRoom(); }
-function pushRoom() { if (room && meRef) meRef.update(myPacket()).catch(() => {}); }
+let lastSentMoving = null, lastSentPos = 0;
+function pushRoom() {
+  if (!room || !meRef) return;
+  lastSentMoving = heroMoving; lastSentPos = S.pos;
+  meRef.update(myPacket()).catch(() => {});
+}
+// send right away when you start/stop or warp, so friends see the exact spot
+function needPushNow() { return room && (heroMoving !== lastSentMoving || Math.abs(S.pos - lastSentPos) > Math.max(1, Math.abs(lastSentPos) * 0.5) && !heroMoving); }
 function roomMult() {
   let n = 0; const t = now();
   for (const k in others) { if (k === S.pid) continue; const p = others[k]; if (p && p.run && t - (p.ts || 0) < 6000) n++; }

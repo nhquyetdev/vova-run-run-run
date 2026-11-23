@@ -1,6 +1,6 @@
 "use strict";
 /* VOVA: RUN RUN RUN — data (facts, phases, challenges, formatting) */
-const VERSION = "1.2";
+const VERSION = "1.4";
 const SAVE_KEY = "vova_run_save_v1", SAVE_BAK = "vova_run_save_v1_bak", PID_KEY = "vova_run_pid";
 const C_LIGHT = 2.998e8, LY = 9.461e15, AU = 1.496e11;
 const EDGE = 4.4e26, EDGE_LG = Math.log10(EDGE), UNI_D = 8.8e26;
@@ -234,3 +234,24 @@ function compareLine(v, seen) {
   for (const c of COMPARE) { if (!seen.includes(c.id)) continue; const t = c.d / v; best = {c, t}; if (t >= 0.5) break; }
   return best ? "→ you'd " + best.c.n + " in " + fmtTime(best.t) : "";
 }
+
+/* ---------- Unit converter (tap ⇄ in the HUD) ---------- */
+const SPEED_UNITS = [
+  {n:"auto"}, {n:"km/h", f:3.6}, {n:"mph", f:2.236936}, {n:"m/s", f:1}, {n:"km/s", f:1e-3}, {n:"miles/s", f:1 / 1609.344},
+  {n:"× speed of sound", f:1 / 343}, {n:"× light speed", f:1 / C_LIGHT}, {n:"AU per second", f:1 / AU}, {n:"light-years per hour", f:3600 / LY}
+];
+const DIST_UNITS = [
+  {n:"auto"}, {n:"m", f:1}, {n:"km", f:1e-3}, {n:"miles", f:1 / 1609.344}, {n:"× around the Earth", f:1 / 4.0075e7},
+  {n:"AU", f:1 / AU}, {n:"light-years", f:1 / LY}, {n:"parsecs", f:1 / 3.0857e16}
+];
+// full digits so players see how BIG the numbers really are (up to 10^36, then scientific)
+function fullNum(x) {
+  if (x === 0) return "0";
+  if (x < 0.001) return sci(x, 2);
+  if (x < 10) return num(x, 3);
+  if (x < 1000) return num(x, 1);
+  if (x < 1e36) return Math.round(x).toLocaleString("en-US");
+  return sci(x, 3);
+}
+function fmtSpeedU(v, i) { return !i ? fmtSpeed(v) : fullNum(v * SPEED_UNITS[i].f) + " " + SPEED_UNITS[i].n; }
+function fmtDistU(m, i) { return !i ? fmtDist(m) : fullNum(m * DIST_UNITS[i].f) + " " + DIST_UNITS[i].n; }
