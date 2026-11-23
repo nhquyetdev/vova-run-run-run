@@ -1,6 +1,6 @@
 "use strict";
 /* VOVA: RUN RUN RUN — data (facts, phases, challenges, formatting) */
-const VERSION = "1.1";
+const VERSION = "1.2";
 const SAVE_KEY = "vova_run_save_v1", SAVE_BAK = "vova_run_save_v1_bak", PID_KEY = "vova_run_pid";
 const C_LIGHT = 2.998e8, LY = 9.461e15, AU = 1.496e11;
 const EDGE = 4.4e26, EDGE_LG = Math.log10(EDGE), UNI_D = 8.8e26;

@@ -106,6 +106,7 @@ textarea{height:80px;font-size:11px;resize:none}
 #hint{position:absolute;left:50%;top:44%;transform:translateX(-50%);font-size:clamp(15px,2.8vw,22px);font-weight:800;text-shadow:0 2px 6px #000;animation:pulse 1.2s infinite;text-align:center;pointer-events:none}
 @keyframes pulse{50%{opacity:.35}}
 #bAuto{width:66px;height:66px;font-size:13px}
+#bTeam{width:58px;height:58px;font-size:11px;background:radial-gradient(circle at 35% 30%,#999,#444)}#bTeam.on{background:radial-gradient(circle at 35% 30%,#ffb86b,#d0661a)}
 #dialTag{font-size:11px;color:#c9f}
 #stats.dim{opacity:.35}
 .toast{position:absolute;left:50%;top:22%;transform:translateX(-50%);background:rgba(20,20,60,.9);border:2px solid #ffd84d;border-radius:12px;padding:8px 14px;font-weight:800;font-size:14px;animation:slideIn .3s;white-space:nowrap}
@@ -143,13 +144,13 @@ input[type=range]{padding:0;border:none;background:none}
   </div>
   <div id="roomTag" class="hidden"></div>
   <div id="chHud" class="hidden"><span id="chName"></span></div>
-  <div id="ctrl"><button class="cb" id="bAuto">AUTO<br>(Q)</button></div>
+  <div id="ctrl"><button class="cb hidden" id="bTeam">🤝<br>TEAM</button><button class="cb" id="bAuto">AUTO<br>(Q)</button></div>
 </div>
 
 <!-- Title -->
 <div id="title" class="screen">
   <div class="panel">
-    <div id="logo">VOVA:<br>RUN RUN RUN<small>v1.1</small></div>
+    <div id="logo">VOVA:<br>RUN RUN RUN<small>HOW BIG IS THE UNIVERSE? · v1.2</small></div>
     <img id="titleImg" src="img/vova.png" alt="Vova">
     <div id="saveInfo"></div>
     <input id="nameIn" maxlength="16" placeholder="Your name">
@@ -165,7 +166,7 @@ input[type=range]{padding:0;border:none;background:none}
   <h2>Paused</h2>
   <button class="btn green" id="mResume">▶ Resume</button>
   <button class="btn" id="mChal">🏆 Challenges</button>
-  <button class="btn hidden" id="mDial" style="background:linear-gradient(180deg,#b06cff,#7a2cd6);box-shadow:0 4px 0 #4a1590">🎚 Speed dial & places</button>
+  <button class="btn" id="mDial" style="background:linear-gradient(180deg,#b06cff,#7a2cd6);box-shadow:0 4px 0 #4a1590">🎚 Pace & places</button>
   <button class="btn" id="mRooms">👥 Rooms</button>
   <div class="row"><button class="btn sm gray" id="mBook">📖 Facts</button><button class="btn sm gray" id="mSave">💾 Save</button></div>
   <div class="row"><button class="btn sm gray" id="mSound">🔊 Sound: ON</button><button class="btn sm gray" id="mSup">💖 Support</button></div>
@@ -225,8 +226,8 @@ input[type=range]{padding:0;border:none;background:none}
 
 <!-- Speed dial -->
 <div id="dial" class="screen hidden"><div class="panel">
-  <h2>🎚 Speed dial</h2>
-  <p>You've seen it all. Run at any speed you've reached, anywhere you've been.</p>
+  <h2>🎚 Pace & places</h2>
+  <p>Run slower if you like (XP is the same), or jump back to any phase you've already discovered.</p>
   <input type="range" id="dialSl" min="1" max="100" step="1">
   <p><b id="dialV"></b></p>
   <button class="btn sm" id="dialMax">⏫ Max speed</button>
@@ -268,7 +269,8 @@ input[type=range]{padding:0;border:none;background:none}
   <p>🤖 <b>AUTO</b> (Q) keeps running for you.</p>
   <p>❓ Every place, speed and phase is a secret until you reach it.</p>
   <p>🏆 <b>Challenges</b> (Menu): race animals, machines and light, escape planets, stars and black holes. Dodge with ↑↓.</p>
-  <p>👥 In a room (up to 8), the track loops — run backward to find your friends.</p>
+  <p>← Running back takes you back: earlier places, earlier phases.</p>
+  <p>👥 In a room (up to 8) arrows show where friends are. Run toward them — you speed up through places you know and brake when you arrive. 🤝 TEAM pace keeps you beside slower friends.</p>
   <button class="btn gray" id="howBack">← Back</button>
 </div></div>
 

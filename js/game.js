@@ -8,15 +8,21 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const PCOL = ["#4dd2ff", "#7dff6b", "#ffd84d", "#ff8bd8", "#b38cff", "#ff9f43", "#5effd8", "#ff6b6b"];
 
 /* ---------------- Save (same key as v1.0 — old saves keep working) ---------------- */
-const DEFAULT = () => ({ver:2, pid:"", name:"", level:1, xp:0, dist:0, runTime:0, seen:[], phase:0, mv:false, uni:0, mvp:0, uniName:"", uniHue:270,
+const DEFAULT = () => ({ver:3, pid:"", name:"", level:1, xp:0, dist:0, pos:0, maxPos:0, odo:0, team:true, runTime:0, seen:[], phase:0, mv:false, uni:0, mvp:0, uniName:"", uniHue:270,
   auto:false, sound:true, ch:[], sup:false, free:{spd:null, place:null}, created:Date.now()});
 let S = DEFAULT();
 function validSave(o) { return o && typeof o === "object" && isFinite(o.level) && o.level >= 1 && isFinite(o.dist) && o.dist >= 0 && Array.isArray(o.seen); }
 function migrate(o) {
   const s = Object.assign(DEFAULT(), o);
-  s.ver = 2; s.free = Object.assign({spd:null, place:null}, o.free || {}); s.ch = Array.isArray(o.ch) ? o.ch : [];
+  s.free = Object.assign({spd:null}, o.free || {}); s.ch = Array.isArray(o.ch) ? o.ch : [];
+  if (!(o.ver >= 3)) { // v1.0 / v1.1 → v1.2: odometer becomes a real position on the journey
+    const far = o.mv ? EDGE + ((o.uni || 0) + (o.mvp || 0)) * UNI_D : (o.dist || 0);
+    s.maxPos = far; s.pos = o.mv && o.free && o.free.place != null ? Math.min(o.free.place, far) : far; s.odo = o.dist || 0;
+  }
+  s.ver = 3; delete s.free.place; delete s.uniName; delete s.uniHue; delete s.mvp;
+  s.dist = s.maxPos;
   if (!s.pid) s.pid = localStorage.getItem(PID_KEY) || ("p" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4));
-  s.phase = Math.max(s.phase || 0, phaseOf(lgOf(s.dist), s.mv));
+  s.phase = Math.max(s.phase || 0, phaseOf(lgOf(Math.min(s.maxPos, EDGE)), s.maxPos >= EDGE));
   delete s.hype;
   return s;
 }
@@ -52,11 +58,17 @@ let dust = [], dustTimer = 3, particles = [], flash = 0, hintTimer = 0;
 let chal = null;
 const vovaImg = new Image(); vovaImg.src = "img/vova.png";
 
-function freeOn() { return S.mv; }
-function effSpeed() { return speedOf(S.mv && S.free.spd ? Math.min(S.free.spd, S.level) : S.level); }
-function viewMV() { return S.mv && S.free.place == null; }
-function viewLg() { return S.mv ? (S.free.place != null ? lgOf(S.free.place) : EDGE_LG) : lgOf(S.dist); }
-function pxps() { return viewMV() ? 900 : Math.min(900, 70 + 28 * Math.log10(1 + effSpeed() / V0)); }
+let curV = V0, pxm = 1, paceMode = "", paceName = ""; // current speed this frame (after team pace / homing) and pixels per metre
+function effSpeed() { return speedOf(S.free.spd ? Math.min(S.free.spd, S.level) : S.level); }
+function viewMV() { return S.pos >= EDGE; }
+function viewLg() { return lgOf(Math.min(S.pos, EDGE)); }
+// Realistic on Earth: Vova is ~1.2 m tall, so 1 m = heroHeight/1.2 px. Faster than ~9 m/s the screen can't keep up → log scale.
+function pxpsOf(v) { const ppm = clamp(H * 0.19, 70, 160) / 1.2, v1 = 1000 / ppm; return v <= v1 ? v * ppm : Math.min(1800, 1000 + 130 * Math.log10(v / v1)); }
+function pxps() { return pxpsOf(curV); }
+function winM(v) { return W * 0.45 * v / pxpsOf(v); } // metres visible on half a screen at speed v
+function uniIdx(p) { return Math.max(0, Math.floor((p - EDGE) / UNI_D)); }
+function uniName(i) { return "Universe #" + num(i + 1) + ": " + UNI_A[Math.floor(hsh(i, 502) * UNI_A.length)] + " " + UNI_B[Math.floor(hsh(i, 503) * UNI_B.length)]; }
+function curUniHue() { return Math.floor(hsh(uniIdx(S.pos), 501) * 360); }
 function heroH() { return clamp(H * 0.19, 70, 160) * (0.88 + 0.18 * hero.wy); }
 function heroSX() { return W / 2 + (hero.wx - camX); }
 function heroSY() { return lerp(bandTop(), bandBot(), hero.wy); }
@@ -96,7 +108,7 @@ function onLevelUp(prevV) {
   save();
 }
 function checkPhase() {
-  const ph = phaseOf(lgOf(S.dist), S.mv);
+  const ph = phaseOf(lgOf(Math.min(S.maxPos, EDGE)), S.maxPos >= EDGE);
   if (ph > S.phase) {
     S.phase = ph; const P = PHASES[ph];
     bannerShow(P.ic + " NEW PHASE " + P.ic, "Phase " + (ph + 1) + ": " + P.n.toUpperCase(), 3.2);
@@ -108,23 +120,19 @@ function checkPhase() {
 function toast(t) { const d = el("div", "toast", t); $("hud").appendChild(d); setTimeout(() => d.remove(), 3000); }
 const UNI_A = ["Purple", "Upside-down", "Jelly", "Mirror", "Singing", "Square", "Frozen", "Candy", "Backwards", "Glitter", "Silent", "Tiny", "Fluffy", "Neon", "Paper", "Echo"];
 const UNI_B = ["Gravity", "Time", "Light", "Stars", "Cats", "Oceans", "Planets", "Rain", "Clocks", "Moons", "Dragons", "Noodles", "Music", "Galaxies"];
-function newUniverse(announce, n) {
-  S.uniHue = Math.floor(Math.random() * 360);
-  S.uniName = "Universe #" + num(S.uni + 1) + ": " + UNI_A[Math.floor(Math.random() * UNI_A.length)] + " " + UNI_B[Math.floor(Math.random() * UNI_B.length)];
-  if (announce) {
-    bannerShow(n > 1 ? "+" + num(n) + " UNIVERSES!" : "UNIVERSE CROSSED!", "Entering " + S.uniName, 2.4);
-    beep([392, 523, 659, 784, 1047], 0.1, "triangle", 0.05);
-    const mf = MULTI_FACTS.find(f => !S.seen.includes(f.id)); if (mf) unlockFact(mf.id);
-    save();
-  }
+function announceUniverses(n) {
+  bannerShow(n > 1 ? "+" + num(n) + " UNIVERSES!" : "UNIVERSE CROSSED!", "Entering " + uniName(uniIdx(S.maxPos)), 2.4);
+  beep([392, 523, 659, 784, 1047], 0.1, "triangle", 0.05);
+  const mf = MULTI_FACTS.find(f => !S.seen.includes(f.id)); if (mf) unlockFact(mf.id);
+  save();
 }
 function enterMultiverse() {
   if (S.mv) return;
-  S.mv = true; S.uni = 0; S.mvp = 0; S.dist = EDGE; newUniverse(false); save();
+  S.mv = true; S.uni = 0; save();
   const lines = ["You have reached the edge of the observable universe.", "About 93 billion light-years across. Two trillion galaxies, maybe more.", "Total running time: " + fmtTime(S.runTime) + ".", "But Vova doesn't stop…", "🌈 WELCOME TO THE MULTIVERSE 🌈"];
   paused = true; show("cut"); let i = 0;
   const step = () => {
-    if (i >= lines.length) { hide("cut"); paused = false; unlockFact("m_0"); checkPhase(); setTimeout(() => toast("🎚 Speed dial unlocked — choose any speed & place (Menu)"), 2500); return; }
+    if (i >= lines.length) { hide("cut"); paused = false; unlockFact("m_0"); checkPhase(); return; }
     const t = $("cutTxt"); t.style.opacity = 0;
     setTimeout(() => { t.textContent = lines[i++]; t.style.opacity = 1; setTimeout(step, 3200); }, 600);
   };
@@ -166,32 +174,49 @@ const stickUp = e => { if (e.pointerId === stick.id) { stick.on = false; stick.d
 addEventListener("pointerup", stickUp); addEventListener("pointercancel", stickUp);
 function toggleAuto() { S.auto = !S.auto; save(); }
 $("bAuto").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); toggleAuto(); });
+$("bTeam").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); S.team = !S.team; save(); toast(S.team ? "🤝 Team pace ON — you'll match slower friends nearby" : "🏃 Team pace OFF — run at your own speed"); });
 $("bMenu").onclick = () => { if (chal) quitChallenge(); else togglePause(); };
 document.querySelectorAll("#emoteBar button").forEach(b => b.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); sendEmote(b.dataset.e); }));
 
 /* ---------------- Update ---------------- */
+// speed this frame: your own speed, slowed to a teammate's pace when you're together,
+// boosted when running back toward a teammate somewhere you've already been (and braking as you arrive)
+function paceSpeed(dir) {
+  let v = effSpeed(); paceMode = "";
+  if (!room) return v;
+  const mates = ghostList();
+  if (S.team) for (const m of mates) if (Math.abs(m.dp - S.pos) < winM(m.v) && m.v < v) { v = m.v; paceMode = "team"; }
+  if (dir) {
+    let best = null;
+    for (const m of mates) { const gap = (m.dp - S.pos) * dir; if (gap > winM(m.v) && (!best || gap < best.gap)) best = {m, gap}; }
+    if (best) {
+      const canBoost = dir < 0 || best.m.dp <= S.maxPos;
+      const vh = canBoost ? Math.max(v, 1.5 * best.gap) : v;
+      v = Math.min(vh, 1.5 * best.gap + best.m.v); paceMode = "home"; paceName = best.m.p.name;
+    }
+  }
+  return Math.max(v, 1e-6);
+}
 function update(dt) {
   const inp = readInput(), mag = Math.min(1, Math.hypot(inp.x, inp.y));
   heroMoving = mag > 0.1;
   if (Math.abs(inp.x) > 0.1) heroFace = Math.sign(inp.x);
-  const stunned = chal && chal.stun > 0;
-  hero.wx += (stunned ? 0 : inp.x) * pxps() * dt;
+  const stunned = chal && chal.stun > 0, hx = stunned ? 0 : inp.x;
+  updateGhosts(dt);
+  curV = paceSpeed(Math.abs(hx) > 0.1 ? Math.sign(hx) : 0); pxm = pxpsOf(curV) / curV;
+  hero.wx += hx * pxps() * dt;
   hero.wy = clamp(hero.wy + inp.y * 1.15 * dt, 0, 1);
   if (heroMoving) {
     hintTimer = 0;
     gainXP(XPS * mag * (1 + roomMult()) * dt);
-    const dv = effSpeed() * mag * dt;
-    if (!S.mv) {
-      const prev = S.dist; S.dist += dv;
-      for (const l of LANDMARKS) if (l.d > prev && l.d <= S.dist) unlockFact(l.id);
+    const dp = hx * curV * dt;
+    S.pos = Math.max(0, S.pos + dp); S.odo += Math.abs(dp);
+    if (S.pos > S.maxPos) {
+      const prev = S.maxPos; S.maxPos = S.pos; S.dist = S.maxPos;
+      for (const l of LANDMARKS) if (l.d > prev && l.d <= S.maxPos) unlockFact(l.id);
       checkPhase();
-      if (S.dist >= EDGE) enterMultiverse();
-    } else if (S.free.place != null) {
-      S.free.place += dv;
-      if (S.free.place >= EDGE) { S.free.place = null; bannerShow("🌈 BACK TO THE MULTIVERSE", S.uniName, 2.5); }
-    } else {
-      const tot = S.mvp + dv / UNI_D, n = Math.floor(tot);
-      S.mvp = tot - n; if (n > 0) { S.uni += n; newUniverse(true, n); }
+      if (!S.mv && S.maxPos >= EDGE) enterMultiverse();
+      if (S.mv) { const u = uniIdx(S.maxPos); if (u > S.uni) { const n = u - S.uni; S.uni = u; announceUniverses(n); } }
     }
     S.runTime += dt;
     animT += dt * (7 + Math.min(9, S.level / 10));
@@ -365,7 +390,7 @@ function nameTag(x, y, txt, col, emote) {
   ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillRect(x - tw / 2, y - 16, tw, 16); ctx.fillStyle = col; ctx.fillText(txt, x, y - 2);
   if (emote) { ctx.font = "26px serif"; ctx.fillText(emote, x, y - 18); }
 }
-function ghostScreen(p) { const d = mod(p.x - mod(hero.wx, RING) + RING / 2, RING) - RING / 2; return {x: heroSX() + d, y: lerp(bandTop(), bandBot(), clamp(p.y ?? 0.5, 0, 1))}; }
+function ghostScreen(g) { return {x: heroSX() + (g.dp - S.pos) * pxm, y: lerp(bandTop(), bandBot(), clamp(g.dy, 0, 1))}; }
 function draw(t) {
   const lg = viewLg(), mv = viewMV();
   drawWorld(lg, mv, t, pxps(), heroMoving);
@@ -377,24 +402,25 @@ function draw(t) {
   }
   if (chal) drawChallenge(t);
   // entities sorted by depth
-  const ents = [], list = room ? othersList() : [], now_ = now();
-  list.forEach((p, i) => { const g = ghostScreen(p); ents.push({y: g.y, f: () => {
-    const h = clamp(H * 0.19, 70, 160) * (0.88 + 0.18 * (p.y ?? 0.5));
-    if (g.x > -80 && g.x < W + 80) { drawVova(g.x, g.y, h, p.f || 1, 0.6, !!p.run, i * 1.7, false); nameTag(g.x, g.y - h - 4, (p.sup ? "💖 " : "") + p.name + " · Lv" + p.level, p.sup ? "#ffd84d" : PCOL[i % 8], p.emote && now_ - (p.et || 0) < 3500 ? p.emote : null); }
+  const ents = [], list = room ? ghostList() : [], now_ = now();
+  list.forEach(gh => { const p = gh.p, i = gh.i, g = ghostScreen(gh); ents.push({y: g.y, f: () => {
+    const h = clamp(H * 0.19, 70, 160) * (0.88 + 0.18 * gh.dy);
+    if (g.x > -80 && g.x < W + 80) { drawVova(g.x, g.y, h, p.f || 1, 0.85, !!p.run, i * 1.7, false); nameTag(g.x, g.y - h - 4, (p.sup ? "💖 " : "") + p.name + " · Lv" + p.level, p.sup ? "#ffd84d" : PCOL[i % 8], p.emote && now_ - (p.et || 0) < 3500 ? p.emote : null); }
   }}); });
   ents.push({y: heroSY(), f: () => {
-    drawVova(heroSX(), heroSY(), heroH(), heroFace, 1, heroMoving, 0, heroMoving && (S.level > 25 || S.mv));
+    drawVova(heroSX(), heroSY(), heroH(), heroFace, 1, heroMoving, 0, heroMoving && curV > 60);
     if (room) nameTag(heroSX(), heroSY() - heroH() - 4, (S.sup ? "💖 " : "") + (S.name || "Vova"), S.sup ? "#ffd84d" : "#fff", myEmote && now_ - myEmoteT < 3500 ? myEmote : null);
   }});
   ents.sort((a, b) => a.y - b.y).forEach(e => e.f());
   for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, 4, 4); }
   ctx.globalAlpha = 1;
   // arrows to off-screen friends
-  list.forEach((p, i) => {
-    const g = ghostScreen(p); if (g.x >= 0 && g.x <= W) return;
+  list.forEach(gh => {
+    const p = gh.p, i = gh.i, g = ghostScreen(gh); if (g.x >= 0 && g.x <= W) return;
     const left = g.x < 0, ax = left ? 14 : W - 14, ay = bandTop() - 30 - i * 22;
     ctx.font = "bold 13px sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = left ? "left" : "right";
-    const txt = left ? "◀ " + p.name : p.name + " ▶";
+    const ph = phaseOf(lgOf(Math.min(gh.dp, EDGE)), gh.dp >= EDGE), where = ph <= S.phase ? PHASES[ph].ic + " " + fmtDist(Math.abs(gh.dp - S.pos)) : "❓";
+    const txt = left ? "◀ " + p.name + " · " + where : p.name + " · " + where + " ▶";
     const tw = ctx.measureText(txt).width + 12; ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(left ? ax - 4 : ax - tw + 4, ay - 10, tw, 20);
     ctx.fillStyle = PCOL[i % 8]; ctx.fillText(txt, ax + (left ? 2 : -2), ay);
   });
@@ -420,31 +446,34 @@ function pctOf(lg, mv) { return mv ? 97 : segPct(lg); }
 let hudT = 0;
 function updateHUD(dt) {
   hudT -= dt; if (hudT > 0) return; hudT = 0.1;
-  const v = effSpeed(), lg = lgOf(S.dist);
+  const v = curV, lg = viewLg();
   $("lv").textContent = "Lv " + num(S.level);
   $("xpFill").style.width = (S.xp / needXP(S.level) * 100) + "%";
-  $("dialTag").textContent = S.mv && S.free.spd && S.free.spd < S.level ? "🎚 speed dial: Lv " + S.free.spd : "";
+  const tags = []; if (S.free.spd && S.free.spd < S.level) tags.push("🎚 Lv " + S.free.spd + " pace");
+  if (paceMode === "team") tags.push("🤝 team pace"); else if (paceMode === "home" && heroMoving) tags.push("➜ heading to " + paceName);
+  $("dialTag").textContent = tags.join(" · ");
+  $("spd").textContent = fmtSpeed(v);
   if (viewMV()) {
-    $("spd").textContent = fmtSpeed(v);
+    const u = uniIdx(S.pos);
     $("cmp").textContent = "≈ " + (v / UNI_D * 60 >= 0.01 ? num(v / UNI_D * 60, 2) : sci(v / UNI_D * 60)) + " universes per minute";
-    $("dst").textContent = num(S.uni) + " universes crossed";
-    $("zone").textContent = "📍 " + S.uniName;
-    $("next").textContent = "Next universe: " + Math.floor(S.mvp * 100) + "%";
+    $("dst").textContent = "Universe #" + num(u + 1) + (S.uni > u ? " (furthest #" + num(S.uni + 1) + ")" : "");
+    $("zone").textContent = "📍 " + uniName(u);
+    $("next").textContent = S.pos >= S.maxPos - 1 ? "Next universe: " + Math.floor(((S.pos - EDGE) / UNI_D - u) * 100) + "%" : "";
   } else {
-    $("spd").textContent = fmtSpeed(v);
     $("cmp").textContent = compareLine(v, S.seen);
-    $("dst").textContent = S.mv ? fmtDist(S.free.place) + " (visiting)" : fmtDist(S.dist);
-    $("zone").textContent = "📍 " + placeName(viewLg(), false);
-    const d = S.mv ? S.free.place : S.dist, nl = LANDMARKS.find(l => l.d > d && !S.seen.includes(l.id)) || (S.mv ? null : LANDMARKS.find(l => l.d > d));
-    $("next").textContent = nl ? "Next discovery: ❓ " + fmtDist(nl.d - d) + " away" : "";
+    $("dst").textContent = fmtDist(S.pos) + " from home";
+    $("zone").textContent = "📍 " + placeName(lg, false);
+    const nl = LANDMARKS.find(l => l.d > S.maxPos);
+    $("next").textContent = nl ? "Next discovery: ❓ " + fmtDist(nl.d - S.pos) + " away" : "";
   }
   const rm = roomMult();
   $("bonus").textContent = rm > 0 ? "👥 Room bonus +" + Math.round(rm * 100) + "% XP" : "";
   $("hint").classList.toggle("hidden", heroMoving || hintTimer < 1.5 || !!chal);
   $("bAuto").classList.toggle("on", !!S.auto);
+  $("bTeam").classList.toggle("hidden", !room); $("bTeam").classList.toggle("on", !!S.team);
   const dots = $("dots"); dots.innerHTML = "";
-  if (room) othersList().forEach((p, i) => { const d = el("div", "dot", (p.name || "?")[0].toUpperCase()); d.style.left = pctOf(p.lg || 0, p.mv) + "%"; d.style.background = PCOL[i % 8]; dots.appendChild(d); });
-  const me = el("div", "dot me"); me.style.left = pctOf(lg, S.mv) + "%"; dots.appendChild(me);
+  if (room) ghostList().forEach(g => { const d = el("div", "dot", (g.p.name || "?")[0].toUpperCase()); d.style.left = pctOf(lgOf(Math.min(g.dp, EDGE)), g.dp >= EDGE) + "%"; d.style.background = PCOL[g.i % 8]; dots.appendChild(d); });
+  const me = el("div", "dot me"); me.style.left = pctOf(lg, viewMV()) + "%"; dots.appendChild(me);
   if (room) { $("roomTag").textContent = "👥 Room " + room + " · " + (othersList().length + 1) + "/8"; show("roomTag"); show("emoteBar"); } else { hide("roomTag"); hide("emoteBar"); }
   $("stats").classList.toggle("dim", !!chal);
 }
@@ -463,11 +492,10 @@ function startGame() {
   S.name = cleanName($("nameIn").value); save();
   hideAllPanels(); show("hud"); playing = true; paused = false; buildTicks();
   if (!S.seen.includes("s_tortoise")) unlockFact("s_tortoise");
-  if (S.mv && !S.uniName) newUniverse(false);
 }
 function togglePause() {
   paused = !paused; keys.clear(); stick.on = false;
-  if (paused) { $("mSound").textContent = "🔊 Sound: " + (S.sound ? "ON" : "OFF"); $("mDial").classList.toggle("hidden", !S.mv); show("menu"); save(); } else hide("menu");
+  if (paused) { $("mSound").textContent = "🔊 Sound: " + (S.sound ? "ON" : "OFF"); show("menu"); save(); } else hide("menu");
 }
 function openPanel(id, from) { backTo = from; hideAllPanels(); show(id); }
 function closePanel(id) { hide(id); show(backTo); }
@@ -545,12 +573,14 @@ $("crList").onclick = () => { hide("chResult"); paused = true; openChals("menu")
 $("crRun").onclick = () => { hide("chResult"); paused = false; };
 function openDial(from) {
   const sl = $("dialSl"); sl.min = 1; sl.max = S.level; sl.value = S.free.spd || S.level;
-  const upd = () => { const L = +sl.value; $("dialV").textContent = "Lv " + L + " speed · " + fmtSpeed(speedOf(L)); };
+  const upd = () => { const L = +sl.value; $("dialV").textContent = "Lv " + L + " pace · " + fmtSpeed(speedOf(L)); };
   sl.oninput = () => { S.free.spd = +sl.value >= S.level ? null : +sl.value; upd(); }; upd();
   const pl = $("dialPlaces"); pl.innerHTML = "";
+  const here = phaseOf(viewLg(), viewMV());
   PHASES.forEach((P, i) => {
-    const b = el("button", "btn sm" + ((i === 7 ? S.free.place == null : S.free.place != null && phaseOf(lgOf(S.free.place)) === i) ? " green" : " gray"), P.ic + " " + P.n);
-    b.onclick = () => { S.free.place = i === 7 ? null : Math.pow(10, Math.max(0, PHASES[i].lg)) * 1.001; save(); openDial(from); };
+    if (i > S.phase) { pl.appendChild(el("button", "btn sm gray", "❓ ???")); return; }
+    const b = el("button", "btn sm" + (i === here ? " green" : " gray"), P.ic + " " + P.n);
+    b.onclick = () => { S.pos = i === 0 ? 0 : i === 7 ? S.maxPos >= EDGE ? Math.max(EDGE, S.pos >= EDGE ? S.pos : EDGE * 1.0001) : EDGE : Math.min(S.maxPos, Math.pow(10, PHASES[i].lg) * 1.001); save(); openDial(from); };
     pl.appendChild(b);
   });
   openPanel("dial", from);
@@ -582,10 +612,10 @@ let last = performance.now(), pushTimer = 0;
 function frame(t) {
   const dt = Math.min(0.1, (t - last) / 1000); last = t;
   if (playing && !paused) update(dt);
-  else if (!playing) { animT += dt * 6; camX += 60 * dt; hero.wx = camX - W * 0.1; heroMoving = true; }
+  else if (!playing) { animT += dt * 6; curV = 1.4; pxm = pxpsOf(curV) / curV; camX += pxps() * dt; hero.wx = camX - W * 0.1; heroMoving = true; }
   try { draw(t); } catch (e) { console.error(e); }
   if (playing) updateHUD(dt);
-  if (room) { pushTimer -= dt; if (pushTimer <= 0) { pushTimer = 1; pushRoom(); } }
+  if (room) { pushTimer -= dt; if (pushTimer <= 0) { pushTimer = heroMoving ? 0.2 : 1.5; pushRoom(); } }
   requestAnimationFrame(frame);
 }
 resize(); buildTicks(); titleInfo();

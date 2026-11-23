@@ -326,7 +326,7 @@ function drawEarthCurve(lg) {
   ctx.restore();
 }
 function drawSpace(lg, mv, t, speedPx, moving) {
-  const [top, bot] = mv ? [`hsl(${S.uniHue},70%,8%)`, `hsl(${(S.uniHue + 60) % 360},60%,22%)`] : spaceCols(lg);
+  const [top, bot] = mv ? [`hsl(${curUniHue()},70%,8%)`, `hsl(${(curUniHue() + 60) % 360},60%,22%)`] : spaceCols(lg);
   ctx.fillStyle = vgrad(0, H, [top, bot]); ctx.fillRect(0, 0, W, H);
   if (!mv && lg >= 19 && lg < 21.4) { // Milky Way band
     ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = vgrad(H * 0.15, H * 0.55, ["rgba(255,200,255,0)", "rgba(255,225,240,.9)", "rgba(150,170,255,0)"]);
@@ -337,7 +337,7 @@ function drawSpace(lg, mv, t, speedPx, moving) {
   for (const s of STARS) {
     const x = mod(s.x - camX * s.z * 0.5, W + 40) - 20, y = s.y * H * 0.95;
     const tw = 0.6 + 0.4 * Math.sin(t / 400 + s.tw);
-    const col = mv ? `hsla(${(S.uniHue + s.h * 120) % 360},100%,85%,${s.z * tw})` : `rgba(255,255,255,${s.z * tw})`;
+    const col = mv ? `hsla(${(curUniHue() + s.h * 120) % 360},100%,85%,${s.z * tw})` : `rgba(255,255,255,${s.z * tw})`;
     if (streak > 3) { ctx.strokeStyle = col; ctx.lineWidth = s.z * 1.6; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dir * streak * s.z, y); ctx.stroke(); }
     else { ctx.fillStyle = col; ctx.fillRect(x, y, s.z * 2, s.z * 2); }
   }
@@ -346,7 +346,7 @@ function drawSpace(lg, mv, t, speedPx, moving) {
   if (!mv && lg >= 21.2 && lg < 23.3) for (let i = 0; i < 9; i++) spiral(mod(hsh(i, 61) * 2400 - camX * 0.04, W + 200) - 100, H * (0.08 + hsh(i, 62) * 0.45), 18 + hsh(i, 63) * 30, t / 6000 + i, (i * 53) % 360, 0.8);
   if (!mv && lg >= 23.3) drawWeb(lg);
   if (mv) drawBubbles(t);
-  roadGlow(mv ? S.uniHue : mod(t / 40, 360));
+  roadGlow(mv ? curUniHue() : mod(t / 40, 360));
 }
 function drawWeb() {
   const pts = []; for (let i = 0; i < 46; i++) pts.push([mod(hsh(i, 71) * 2600 - camX * 0.05, W + 200) - 100, H * 0.78 * hsh(i, 72), 1 + hsh(i, 73) * 3]);
@@ -356,7 +356,7 @@ function drawWeb() {
 }
 function drawBubbles(t) {
   for (let i = 0; i < 16; i++) {
-    const r = 18 + hsh(i, 81) * 50, x = mod(hsh(i, 82) * 2600 - camX * (0.03 + hsh(i, 83) * 0.05), W + 240) - 120, y = 70 + H * 0.55 * hsh(i, 84) + Math.sin(t / 900 + i) * 6, hue = (S.uniHue + i * 29) % 360;
+    const r = 18 + hsh(i, 81) * 50, x = mod(hsh(i, 82) * 2600 - camX * (0.03 + hsh(i, 83) * 0.05), W + 240) - 120, y = 70 + H * 0.55 * hsh(i, 84) + Math.sin(t / 900 + i) * 6, hue = (curUniHue() + i * 29) % 360;
     const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
     g.addColorStop(0, `hsla(${hue},100%,90%,.5)`); g.addColorStop(0.8, `hsla(${hue},90%,55%,.18)`); g.addColorStop(1, `hsla(${hue},90%,75%,.6)`);
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
