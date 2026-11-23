@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>VOVA: RUN RUN RUN</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;color:#fff;user-select:none;-webkit-user-select:none;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hidden{display:none!important}
+button{font-family:inherit;cursor:pointer;border:none}
+/* ---------- HUD ---------- */
+#hud{position:fixed;inset:0;pointer-events:none}
+#cosmic{position:absolute;top:calc(8px + env(safe-area-inset-top));left:12px;right:64px;height:34px}
+.dot{position:absolute;top:15px;width:14px;height:14px;margin-left:-7px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 6px #000;font-size:8px;line-height:10px;text-align:center;font-weight:bold;color:#000;transition:left .4s}
+.dot.me{width:18px;height:18px;margin-left:-9px;top:13px;background:#ff4d6d;z-index:3;box-shadow:0 0 10px #ff4d6d}
+#stats{position:absolute;top:calc(48px + env(safe-area-inset-top));left:12px;background:rgba(0,0,10,.45);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:8px 12px;min-width:230px;max-width:min(330px,62vw);backdrop-filter:blur(3px)}
+#lvRow{display:flex;align-items:baseline;gap:8px}
+#lv{font-size:26px;font-weight:900;color:#ffd84d;text-shadow:0 2px 0 #a40}
+#lvMax{font-size:12px;color:#aaa}
+#xpBar{height:9px;border-radius:5px;background:rgba(255,255,255,.15);overflow:hidden;margin:4px 0 6px}
+#xpFill{height:100%;width:0;background:linear-gradient(90deg,#5ef,#7f7);transition:width .15s}
+.st{font-size:13px;line-height:1.45;color:#dde}
+.st b{color:#fff}
+#spd{font-size:17px;font-weight:800;color:#7ff}
+#cmp{font-size:12px;color:#bcd;font-style:italic}
+#zone{font-size:12px;color:#ffd;margin-top:2px}
+#next{font-size:12px;color:#cfc}
+#bonus{font-size:12px;color:#fc7;margin-top:2px}
+@keyframes pulse{50%{opacity:.35}}
+/* facts */
+#facts{position:absolute;top:calc(48px + env(safe-area-inset-top));right:12px;width:min(360px,calc(100vw - 24px));pointer-events:auto}
+.fact{background:rgba(10,10,35,.88);border:2px solid #7af;border-radius:14px;padding:10px 12px 10px 52px;margin-bottom:8px;position:relative;box-shadow:0 4px 18px rgba(0,0,0,.5);animation:slideIn .35s ease-out;cursor:pointer}
+.fact.speed{border-color:#5fe}.fact.place{border-color:#fc5}.fact.multi{border-color:#e7f}
+.fact .ic{position:absolute;left:10px;top:9px;font-size:30px}
+.fact .tg{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#9ab}
+.fact .t{font-weight:800;font-size:15px;margin:1px 0 3px}
+.fact .x{font-size:13px;color:#dde;line-height:1.35}
+@keyframes slideIn{from{transform:translateX(40px);opacity:0}}
+/* banners */
+#banner{position:absolute;left:50%;top:32%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+#banner .big{font-size:clamp(30px,7vw,64px);font-weight:900;color:#ffd84d;text-shadow:0 4px 0 #a40,0 0 30px #f80}
+#banner .small{font-size:clamp(14px,2.6vw,20px);color:#fff;text-shadow:0 2px 4px #000;margin-top:4px}
+.pop{animation:pop .5s ease-out}
+@keyframes pop{0%{transform:scale(.3);opacity:0}70%{transform:scale(1.12)}}
+/* buttons */
+#ctrl{position:absolute;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;gap:10px;align-items:flex-end;pointer-events:auto}
+.cb{border-radius:50%;color:#fff;font-weight:900;box-shadow:0 5px 0 rgba(0,0,0,.35),0 0 18px rgba(0,0,0,.4);touch-action:none}
+#bAuto{width:58px;height:58px;background:radial-gradient(circle at 35% 30%,#999,#444);font-size:12px}
+#bAuto.on{background:radial-gradient(circle at 35% 30%,#7f9,#1a6)}
+#bMenu{position:absolute;top:calc(8px + env(safe-area-inset-top));right:12px;width:42px;height:38px;border-radius:10px;background:rgba(0,0,0,.5);color:#fff;font-size:20px;pointer-events:auto;border:1px solid rgba(255,255,255,.25)}
+#roomTag{position:absolute;bottom:calc(44px + env(safe-area-inset-bottom));left:12px;font-size:12px;background:rgba(0,0,0,.5);padding:4px 8px;border-radius:8px;pointer-events:auto}
+#emoteBar{position:absolute;bottom:calc(124px + env(safe-area-inset-bottom));right:14px;display:flex;gap:6px;pointer-events:auto}
+#emoteBar button{width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.5);font-size:20px;border:1px solid rgba(255,255,255,.25)}
+/* ---------- Panels ---------- */
+.screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,12,.72);backdrop-filter:blur(4px);padding:16px;z-index:20}
+.panel{background:linear-gradient(160deg,#1b1640,#0d1030);border:2px solid #5a6cff;border-radius:20px;padding:20px;width:min(460px,100%);max-height:100%;overflow:auto;box-shadow:0 10px 50px rgba(0,0,0,.6);touch-action:pan-y}
+.panel h2{font-size:22px;margin-bottom:10px;color:#ffd84d}
+.panel p{font-size:14px;color:#ccd;line-height:1.45;margin-bottom:10px}
+.btn{display:block;width:100%;padding:12px;margin:8px 0;border-radius:12px;font-size:16px;font-weight:800;color:#fff;background:linear-gradient(180deg,#5b6cff,#3443c9);box-shadow:0 4px 0 #1d2580}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #1d2580}
+.btn.red{background:linear-gradient(180deg,#ff5a76,#c8183c);box-shadow:0 4px 0 #7a0d22}
+.btn.green{background:linear-gradient(180deg,#3fd47e,#169a4c);box-shadow:0 4px 0 #0b5e2d}
+.btn.gray{background:linear-gradient(180deg,#666,#444);box-shadow:0 4px 0 #222}
+.btn.sm{padding:8px;font-size:14px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+input,textarea{width:100%;padding:11px;border-radius:10px;border:2px solid #5a6cff;background:#0a0c24;color:#fff;font-size:16px;font-family:inherit;user-select:text;-webkit-user-select:text}
+textarea{height:80px;font-size:11px;resize:none}
+#title{background:radial-gradient(ellipse at 50% 30%,#2b1d6b,#050418 70%)}
+#title .panel{text-align:center;background:rgba(15,12,45,.85)}
+#logo{font-size:clamp(34px,9vw,54px);font-weight:900;line-height:.95;color:#ffd84d;text-shadow:0 4px 0 #b4380c,0 0 30px rgba(255,140,0,.6);letter-spacing:1px}
+#logo small{display:block;font-size:14px;color:#9cf;text-shadow:none;letter-spacing:4px;margin-top:6px}
+#titleImg{width:130px;height:130px;margin:6px auto 2px;display:block;animation:bob .5s ease-in-out infinite alternate}
+@keyframes bob{to{transform:translateY(-8px) rotate(4deg)}}
+#saveInfo{font-size:13px;color:#aef;margin:4px 0 8px}
+.support{display:flex;gap:8px;margin-top:10px}
+.support a{flex:1;text-decoration:none;padding:9px;border-radius:10px;font-size:13px;font-weight:800;color:#fff;text-align:center}
+.kofi{background:#29abe0}.yt{background:#e62117}
+.plist{margin:8px 0}
+.pl{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.06);margin-bottom:5px;font-size:13px}
+.pl .c{width:12px;height:12px;border-radius:50%;flex:none}
+.pl .n{font-weight:800;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl .z{color:#9ab;font-size:11px}
+.rl{display:flex;justify-content:space-between;align-items:center;padding:9px;border-radius:10px;background:rgba(255,255,255,.07);margin-bottom:6px;font-size:14px;cursor:pointer}
+.rl:hover{background:rgba(255,255,255,.14)}
+#err{color:#f88;font-size:13px;min-height:18px}
+.fb{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+.fb .t{font-weight:800;font-size:14px}.fb .x{font-size:12px;color:#ccd;line-height:1.35}
+.small{font-size:12px;color:#99a}
+@media (max-width:700px){
+  #facts{top:calc(188px + env(safe-area-inset-top));left:10px;right:10px;width:auto}
+  .fact{padding:8px 10px 8px 46px}.fact .t{font-size:14px}.fact .x{font-size:12px}
+  #stats{padding:6px 10px;min-width:0}
+  #lv{font-size:22px}.st{font-size:12px}#spd{font-size:15px}
+    #emoteBar{bottom:auto;top:calc(48px + env(safe-area-inset-top));flex-direction:column}
+}
+#cut{position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:30;text-align:center;padding:24px}
+#cutTxt{font-size:clamp(18px,4vw,30px);font-weight:800;max-width:800px;line-height:1.4;transition:opacity 1s}
+
+#cosmicBar{position:absolute;left:0;right:0;top:14px;height:16px}
+.seg{position:absolute;top:0;height:16px;border-right:2px solid rgba(0,0,0,.5);background:rgba(255,255,255,.12);font-size:11px;line-height:16px;text-align:center;overflow:hidden;color:#aab}
+.seg.known{background:linear-gradient(90deg,rgba(120,200,255,.45),rgba(200,140,255,.45));color:#fff}
+.dot{top:12px!important}
+.dot.me{top:10px!important}
+#hint{position:absolute;left:50%;top:44%;transform:translateX(-50%);font-size:clamp(15px,2.8vw,22px);font-weight:800;text-shadow:0 2px 6px #000;animation:pulse 1.2s infinite;text-align:center;pointer-events:none}
+@keyframes pulse{50%{opacity:.35}}
+#bAuto{width:66px;height:66px;font-size:13px}
+#dialTag{font-size:11px;color:#c9f}
+#stats.dim{opacity:.35}
+.toast{position:absolute;left:50%;top:22%;transform:translateX(-50%);background:rgba(20,20,60,.9);border:2px solid #ffd84d;border-radius:12px;padding:8px 14px;font-weight:800;font-size:14px;animation:slideIn .3s;white-space:nowrap}
+.grp{font-weight:900;color:#ffd84d;margin:12px 0 4px;font-size:15px}
+.chrow{display:flex;align-items:center;gap:10px;padding:9px;border-radius:10px;background:rgba(255,255,255,.07);margin-bottom:6px;cursor:pointer}
+.chrow:hover{background:rgba(255,255,255,.15)}.chrow.done{background:rgba(80,220,120,.15)}
+.chrow .ci{font-size:26px}.chrow .cm{flex:1}.chrow .ct{font-weight:800;font-size:14px}.chrow .cn{font-size:12px;color:#aab}.chrow .cr{font-size:20px}
+#chHud{position:absolute;left:12px;bottom:calc(14px + env(safe-area-inset-bottom));font-weight:800;font-size:14px;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:10px}
+.code{font-size:24px;font-weight:900;color:#ffd84d;letter-spacing:2px;text-align:center;margin:6px 0}
+input[type=range]{padding:0;border:none;background:none}
+#dialPlaces{display:grid;grid-template-columns:1fr 1fr;gap:6px}#dialPlaces .btn{margin:0}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="cosmic"><div id="cosmicBar"><div id="ticks"></div><div id="dots"></div></div></div>
+  <button id="bMenu" aria-label="Menu">☰</button>
+  <div id="stats">
+    <div id="lvRow"><div id="lv">Lv 1</div><div id="dialTag"></div></div>
+    <div id="xpBar"><div id="xpFill"></div></div>
+    <div class="st">Speed <span id="spd">0</span></div>
+    <div id="cmp"></div>
+    <div class="st">Distance <b id="dst">0 m</b></div>
+    <div id="zone"></div>
+    <div id="next"></div>
+    <div id="bonus"></div>
+  </div>
+  <div id="facts"></div>
+  <div id="banner"></div>
+  <div id="hint">Move with ← → ↑ ↓ / WASD<br>or drag anywhere on the screen</div>
+  <div id="emoteBar" class="hidden">
+    <button data-e="👋">👋</button><button data-e="🔥">🔥</button><button data-e="🚀">🚀</button><button data-e="😂">😂</button><button data-e="❤️">❤️</button>
+  </div>
+  <div id="roomTag" class="hidden"></div>
+  <div id="chHud" class="hidden"><span id="chName"></span></div>
+  <div id="ctrl"><button class="cb" id="bAuto">AUTO<br>(Q)</button></div>
+</div>
+
+<!-- Title -->
+<div id="title" class="screen">
+  <div class="panel">
+    <div id="logo">VOVA:<br>RUN RUN RUN<small>v1.1</small></div>
+    <img id="titleImg" src="img/vova.png" alt="Vova">
+    <div id="saveInfo"></div>
+    <input id="nameIn" maxlength="16" placeholder="Your name">
+    <button class="btn red" id="bPlay">▶ RUN</button>
+    <button class="btn" id="bRooms">👥 ROOMS (up to 8)</button>
+    <div class="row"><button class="btn sm gray" id="bBook1">📖 Facts</button><button class="btn sm gray" id="bHow">❓ How</button><button class="btn sm gray" id="bSave1">💾 Save</button></div>
+    <button class="btn sm" id="bSup1" style="background:linear-gradient(180deg,#ff7eb3,#d6336c);box-shadow:0 4px 0 #8a1a45">💖 Support me</button>
+  </div>
+</div>
+
+<!-- Menu -->
+<div id="menu" class="screen hidden"><div class="panel">
+  <h2>Paused</h2>
+  <button class="btn green" id="mResume">▶ Resume</button>
+  <button class="btn" id="mChal">🏆 Challenges</button>
+  <button class="btn hidden" id="mDial" style="background:linear-gradient(180deg,#b06cff,#7a2cd6);box-shadow:0 4px 0 #4a1590">🎚 Speed dial & places</button>
+  <button class="btn" id="mRooms">👥 Rooms</button>
+  <div class="row"><button class="btn sm gray" id="mBook">📖 Facts</button><button class="btn sm gray" id="mSave">💾 Save</button></div>
+  <div class="row"><button class="btn sm gray" id="mSound">🔊 Sound: ON</button><button class="btn sm gray" id="mSup">💖 Support</button></div>
+  <button class="btn sm gray" id="mTitle">🏠 Title screen</button>
+</div></div>
+
+<!-- Rooms -->
+<div id="rooms" class="screen hidden"><div class="panel">
+  <h2>👥 Rooms</h2>
+  <div id="roomOff" class="hidden"><p>Online rooms aren't set up yet. The game owner needs to paste a Firebase config into <b>config.js</b> (see README). Solo play works fine meanwhile.</p></div>
+  <div id="roomOut" class="hidden">
+    <p>Run together with your <b>own save</b>. The room track loops — run forward or backward to find friends. Each friend running gives <b>+5% XP</b> (max +35%).</p>
+    <button class="btn green" id="rCreate">➕ Create room</button>
+    <div class="row"><input id="rCode" maxlength="6" placeholder="ROOM CODE" style="text-transform:uppercase"><button class="btn" id="rJoin" style="margin:0">Join</button></div>
+    <div id="err"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><b>Open rooms</b><button class="btn sm gray" id="rRefresh" style="width:auto;margin:0;padding:6px 10px">↻</button></div>
+    <div id="rList" class="small">Loading…</div>
+  </div>
+  <div id="roomIn" class="hidden">
+    <p>Room code: <b id="rCodeShow" style="font-size:22px;color:#ffd84d;letter-spacing:3px"></b> <span class="small">— share it with friends</span></p>
+    <div class="plist" id="rPlayers"></div>
+    <button class="btn red" id="rLeave">🚪 Leave room</button>
+  </div>
+  <button class="btn gray" id="rBack">← Back</button>
+</div></div>
+
+<!-- Fact book -->
+<div id="book" class="screen hidden"><div class="panel">
+  <h2>📖 Facts <span class="small" id="bookCount"></span></h2>
+  <div id="bookList"></div>
+  <button class="btn gray" id="bookBack">← Back</button>
+</div></div>
+
+<!-- Challenges -->
+<div id="chals" class="screen hidden"><div class="panel">
+  <h2>🏆 Challenges <span class="small" id="chCount"></span></h2>
+  <p class="small" id="chSpeed"></p>
+  <div id="chList"></div>
+  <button class="btn gray" id="chBack">← Back</button>
+</div></div>
+<div id="chIntro" class="screen hidden"><div class="panel">
+  <h2 id="ciTitle"></h2>
+  <p id="ciText"></p>
+  <p><b id="ciNeed"></b><br><span id="ciYou"></span></p>
+  <p class="small" id="ciHow"></p>
+  <button class="btn red" id="ciStart">▶ START</button>
+  <button class="btn gray" id="ciBack">← Back</button>
+</div></div>
+<div id="chResult" class="screen hidden"><div class="panel">
+  <h2 id="crTitle"></h2>
+  <p><b id="crName"></b></p>
+  <p id="crText"></p>
+  <p class="small" id="crReward"></p>
+  <div class="row"><button class="btn sm" id="crAgain">↻ Again</button><button class="btn sm gray" id="crList">🏆 List</button></div>
+  <button class="btn green" id="crRun">▶ Keep running</button>
+</div></div>
+
+<!-- Speed dial -->
+<div id="dial" class="screen hidden"><div class="panel">
+  <h2>🎚 Speed dial</h2>
+  <p>You've seen it all. Run at any speed you've reached, anywhere you've been.</p>
+  <input type="range" id="dialSl" min="1" max="100" step="1">
+  <p><b id="dialV"></b></p>
+  <button class="btn sm" id="dialMax">⏫ Max speed</button>
+  <p style="margin-top:10px"><b>Go to:</b></p>
+  <div id="dialPlaces"></div>
+  <button class="btn gray" id="dialBack">← Back</button>
+</div></div>
+
+<!-- Save -->
+<div id="savep" class="screen hidden"><div class="panel">
+  <h2>💾 Save</h2>
+  <p>Progress saves automatically on this device every few seconds. To move it to another device (your supporter badge comes with it), copy this code and paste it there.</p>
+  <textarea id="saveCode" readonly></textarea>
+  <button class="btn sm" id="sCopy">📋 Copy code</button>
+  <textarea id="loadCode" placeholder="Paste a save code here"></textarea>
+  <button class="btn sm green" id="sLoad">⬇ Load this code</button>
+  <div id="sMsg" class="small"></div>
+  <button class="btn sm red" id="sReset">🗑 Reset progress</button>
+  <button class="btn gray" id="sBack">← Back</button>
+</div></div>
+
+<!-- Support -->
+<div id="sup" class="screen hidden"><div class="panel">
+  <h2>💖 Support me</h2>
+  <p>If you enjoy Vova's run, you can support the game on Ko-fi. Put your supporter code in the Ko-fi message so your 💖 badge can be linked to you:</p>
+  <div class="code" id="supCode"></div>
+  <button class="btn sm gray" id="supCopy">📋 Copy code</button>
+  <p class="small" id="supStatus"></p>
+  <div class="support"><a class="kofi" href="https://ko-fi.com/lichstream" target="_blank" rel="noopener">☕ Ko-fi</a><a class="yt" href="https://youtube.com/@LichStream" target="_blank" rel="noopener">▶ YouTube</a></div>
+  <button class="btn gray" id="supBack">← Back</button>
+</div></div>
+
+<!-- How -->
+<div id="how" class="screen hidden"><div class="panel">
+  <h2>❓ How to play</h2>
+  <p>🏃 <b>Move</b> with ← → ↑ ↓ / WASD, or drag anywhere on the screen like a joystick. Moving in <b>any</b> direction earns XP.</p>
+  <p>⬆ <b>Level up</b> and you run faster. How far can you go? Nobody knows… yet.</p>
+  <p>⭐ Grab the glowing star dust for bonus XP.</p>
+  <p>🤖 <b>AUTO</b> (Q) keeps running for you.</p>
+  <p>❓ Every place, speed and phase is a secret until you reach it.</p>
+  <p>🏆 <b>Challenges</b> (Menu): race animals, machines and light, escape planets, stars and black holes. Dodge with ↑↓.</p>
+  <p>👥 In a room (up to 8), the track loops — run backward to find your friends.</p>
+  <button class="btn gray" id="howBack">← Back</button>
+</div></div>
+
+<div id="cut" class="hidden"><div id="cutTxt"></div></div>
+
+<script src="config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/scene.js"></script>
+<script src="js/online.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
